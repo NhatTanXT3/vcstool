@@ -121,3 +121,105 @@ def test_url(url, retry=2, retry_period=1, timeout=10):
                 timeout=timeout)
         raise URLError(str(e) + ' (%s)' % url)
     return response
+
+
+def download_url_to_file(url, filepath, timeout=10, chunk_size=8192):
+    """
+    Download a file from URL to filepath using streaming for memory efficiency.
+    Shows progress during download.
+
+    Args:
+        url: The URL to download from
+        filepath: The local file path to save to
+        timeout: Connection timeout in seconds
+        chunk_size: Size of chunks to read at once (default: 8KB)
+
+    Raises:
+        URLError: If download fails
+        OSError: If file operations fail
+    """
+    import sys
+
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+    try:
+        # Open URL connection
+        response = urlopen(url, timeout=timeout)
+
+        # Get total file size if available
+        total_size = response.headers.get('Content-Length')
+        if total_size:
+            total_size = int(total_size)
+
+        # Open file for writing
+        with open(filepath, 'wb') as f:
+            downloaded = 0
+            start_time = time.time()
+            last_progress_time = start_time
+            progress_interval = 1.0  # Show progress every 1 second
+
+            while True:
+                chunk = response.read(chunk_size)
+                if not chunk:
+                    break
+
+                f.write(chunk)
+                downloaded += len(chunk)
+
+                # Show progress periodically
+                current_time = time.time()
+                if current_time - last_progress_time >= progress_interval:
+                    elapsed = current_time - start_time
+                    speed = downloaded / elapsed if elapsed > 0 else 0
+
+                    # Format progress message
+                    if total_size:
+                        percentage = (downloaded / total_size) * 100
+                        progress_msg = "Downloading {} : {:.1f}MB / {:.1f}MB ({:.0f}%) - {:.1f}KB/s".format(
+                            url,
+                            downloaded / (1024 * 1024),
+                            total_size / (1024 * 1024),
+                            percentage,
+                            speed / 1024
+                        )
+                    else:
+                        progress_msg = "Downloading {} : {:.1f}MB - {:.1f}KB/s".format(
+                            url,
+                            downloaded / (1024 * 1024),
+                            speed / 1024
+                        )
+
+                    # Print progress (with carriage return to overwrite line)
+                    print(progress_msg, end='\r', file=sys.stderr)
+                    last_progress_time = current_time
+
+            # Final progress message
+            elapsed = time.time() - start_time
+            speed = downloaded / elapsed if elapsed > 0 else 0
+
+            if total_size:
+                percentage = (downloaded / total_size) * 100
+                final_msg = "Downloaded {} : {:.1f}MB / {:.1f}MB ({:.0f}%) - {:.1f}KB/s".format(
+                    url,
+                    downloaded / (1024 * 1024),
+                    total_size / (1024 * 1024),
+                    percentage,
+                    speed / 1024
+                )
+            else:
+                final_msg = "Downloaded {} : {:.1f}MB - {:.1f}KB/s".format(
+                    url,
+                    downloaded / (1024 * 1024),
+                    speed / 1024
+                )
+
+            print(final_msg, file=sys.stderr)
+
+    except HTTPError as e:
+        e.msg += ' (%s)' % url
+        raise
+    except URLError as e:
+        raise URLError(str(e) + ' (%s)' % url)
+    except OSError as e:
+        raise OSError("Failed to write file '%s': %s" % (filepath, e))
