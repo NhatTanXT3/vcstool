@@ -234,7 +234,12 @@ class TarClient(VcsClientBase):
             else:
                 local_status += " (no hash verification)"
         else:
-            local_status += " - will be downloaded on import"
+            return {
+                'cmd': '',
+                'cwd': self.path,
+                'output': "Tarball url '%s' exists. %s" % (command.url, local_status),
+                'returncode': 1
+            }
 
         return {
             'cmd': 'http HEAD url',
