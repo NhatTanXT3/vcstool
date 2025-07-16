@@ -17,11 +17,13 @@ class ValidateCommand(Command):
     command = 'validate'
     help = 'Validate the repository list file'
 
-    def __init__(self, args, url, version=None):
+    def __init__(self, args, url, version=None, hash_md5=None, hash_sha256=None):
         super(ValidateCommand, self).__init__(args)
         self.url = url
         self.version = version
         self.retry = args.retry
+        self.hash_md5 = hash_md5
+        self.hash_sha256 = hash_sha256
 
 
 def get_parser():
@@ -57,7 +59,8 @@ def generate_jobs(repos, args):
         args.path = None  # expected to be present
         command = ValidateCommand(
             args, repo['url'],
-            str(repo['version']) if 'version' in repo else None)
+            str(repo['version']) if 'version' in repo else None,
+            hash_md5=repo.get('hash_md5'), hash_sha256=repo.get('hash_sha256'))
         job = {'client': client, 'command': command}
         jobs.append(job)
     return jobs

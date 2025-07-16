@@ -174,8 +174,9 @@ class TarClient(VcsClientBase):
                 "Downloaded tarball ({}) from '{}' and unpacked it".format(
                     "new" if new_download else "existing",
                     command.url
-                ),
-            'returncode': 0
+            'output': output_msg,
+            'returncode': 0,
+            'is_raw_file': is_raw_file
         }
 
     def validate(self, command):
@@ -187,7 +188,7 @@ class TarClient(VcsClientBase):
                 'returncode': 1
             }
 
-        # test url
+        # test remote url
         try:
             test_url(command.url, retry=command.retry)
         except URLError as e:
@@ -199,9 +200,45 @@ class TarClient(VcsClientBase):
                     (command.url, e),
                 'returncode': 1
             }
+
+        # test local tarball and hash
+        tarball_path = self._get_tarball_path(command.url)
+        local_status = "Local tarball not found"
+
+        if os.path.exists(tarball_path):
+            local_status = "Local tarball exists"
+
+            # Verify hash if provided
+            if command.hash_md5:
+                if self._verify_file_hash(tarball_path, command.hash_md5, 'md5'):
+                    local_status += " and MD5 hash verified"
+                else:
+                    return {
+                        'cmd': '',
+                        'cwd': self.path,
+                        'output':
+                            "Local tarball exists but MD5 hash verification failed for '%s'" % command.url,
+                        'returncode': 1
+                    }
+            elif command.hash_sha256:
+                if self._verify_file_hash(tarball_path, command.hash_sha256, 'sha256'):
+                    local_status += " and SHA256 hash verified"
+                else:
+                    return {
+                        'cmd': '',
+                        'cwd': self.path,
+                        'output':
+                            "Local tarball exists but SHA256 hash verification failed for '%s'" % command.url,
+                        'returncode': 1
+                    }
+            else:
+                local_status += " (no hash verification)"
+        else:
+            local_status += " - will be downloaded on import"
+
         return {
             'cmd': 'http HEAD url',
             'cwd': self.path,
-            'output': "Tarball url '%s' exists" % command.url,
+            'output': "Tarball url '%s' exists. %s" % (command.url, local_status),
             'returncode': None
         }
