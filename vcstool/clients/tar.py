@@ -53,13 +53,21 @@ class TarClient(VcsClientBase):
         # Store directly in self.path
         return os.path.join(self.path, filename)
 
+    def _is_tar_file(self, filename):
+        tar_exts = [
+            '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz', '.tar.lz', '.tar.lzma', '.tar.zst', '.tar.Z'
+        ]
+        filename = filename.lower()
+        return any(filename.endswith(ext) for ext in tar_exts)
+
     def import_(self, command):
         if not command.url:
             return {
                 'cmd': '',
                 'cwd': self.path,
                 'output': "Repository data lacks the 'url' value",
-                'returncode': 1
+                'returncode': 1,
+                'is_raw_file': False
             }
 
         # Get local tarball path first
@@ -104,7 +112,6 @@ class TarClient(VcsClientBase):
                 # No hash provided, assume file is valid
                 hash_verified = True
 
-        # print(f"Tarball path: {tarball_path} exists: {file_exists} hash_verified: {hash_verified}") 
         # Download tarball if needed
         new_download = False
         if not file_exists or not hash_verified:
@@ -116,7 +123,8 @@ class TarClient(VcsClientBase):
                     'cwd': self.path,
                     'output':
                         "Could not download tarball from '%s': %s" % (command.url, e),
-                    'returncode': 1
+                    'returncode': 1,
+                    'is_raw_file': False
                 }
 
             # Verify hash after download if provided
@@ -126,8 +134,9 @@ class TarClient(VcsClientBase):
                         'cmd': '',
                         'cwd': self.path,
                         'output':
-                            "Hash verification failed for tarball from '%s': MD5 mismatch" % command.url,
-                        'returncode': 1
+                            "Hash verification failed for file downloaded from '%s': MD5 mismatch" % command.url,
+                        'returncode': 1,
+                        'is_raw_file': False
                     }
             elif command.hash_sha256:
                 if not self._verify_file_hash(tarball_path, command.hash_sha256, 'sha256'):
@@ -135,45 +144,54 @@ class TarClient(VcsClientBase):
                         'cmd': '',
                         'cwd': self.path,
                         'output':
-                            "Hash verification failed for tarball from '%s': SHA256 mismatch" % command.url,
-                        'returncode': 1
+                            "Hash verification failed for file downloaded from '%s': SHA256 mismatch" % command.url,
+                        'returncode': 1,
+                        'is_raw_file': False
                     }
             new_download = True
 
-        # Extract tarball from file
-        try:
-            tar = tarfile.open(tarball_path, mode='r', errorlevel=1)
-        except (tarfile.ReadError, IOError, OSError) as e:
-            return {
-                'cmd': '',
-                'cwd': self.path,
-                'output':
-                    "Failed to read tarball file '%s': %s" % (tarball_path, e),
-                'returncode': 1
-            }
-
-        if not command.version:
-            members = None
+        # Decide if we should try to extract as tar
+        is_tar = self._is_tar_file(tarball_path)
+        is_raw_file = False
+        extract_error = None
+        if is_tar:
+            try:
+                tar = tarfile.open(tarball_path, mode='r', errorlevel=1)
+                if not command.version:
+                    members = None
+                else:
+                    # remap all members from version subfolder into destination
+                    def get_members(tar, prefix):
+                        for tar_info in tar.getmembers():
+                            if tar_info.name.startswith(prefix):
+                                tar_info.name = tar_info.name[len(prefix):]
+                                yield tar_info
+                    prefix = str(command.version) + '/'
+                    members = get_members(tar, prefix)
+                tar.extractall(self.path, members)
+                tar.close()
+            except (tarfile.ReadError, IOError, OSError, Exception) as e:
+                # Extraction failed, treat as raw file
+                extract_error = e
+                is_raw_file = True
         else:
-            # remap all members from version subfolder into destination
-            def get_members(tar, prefix):
-                for tar_info in tar.getmembers():
-                    if tar_info.name.startswith(prefix):
-                        tar_info.name = tar_info.name[len(prefix):]
-                        yield tar_info
-            prefix = str(command.version) + '/'
-            members = get_members(tar, prefix)
+            is_raw_file = True
 
-        tar.extractall(self.path, members)
-        tar.close()
+        output_msg = "Downloaded tarball ({}) from '{}' and ".format(
+            "new" if new_download else "existing",
+            command.url
+        )
+        if is_raw_file:
+            if extract_error:
+                output_msg += "failed to extract as tar ({}), left as raw file.".format(extract_error)
+            else:
+                output_msg += "is not a tar archive, left as raw file."
+        else:
+            output_msg += "unpacked it."
 
         return {
             'cmd': '',
             'cwd': self.path,
-            'output':
-                "Downloaded tarball ({}) from '{}' and unpacked it".format(
-                    "new" if new_download else "existing",
-                    command.url
             'output': output_msg,
             'returncode': 0,
             'is_raw_file': is_raw_file
