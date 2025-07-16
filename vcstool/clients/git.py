@@ -695,53 +695,87 @@ class GitClient(VcsClientBase):
                     else:
                         refs.append(hash_and_ref[1])
 
+            remote_found = False
+            local_found = self._check_local_commit_exists(command.version)
+            local_commit_info = self._get_local_commit_info(command.version) if local_found else None
+
             if command.version in refs:
                 version_type = 'ref'
                 version_name = command.version
+                remote_found = True
             elif (
                 command.version.startswith('heads/') and
                 command.version[6:] in branches
             ):
                 version_type = 'branch'
                 version_name = command.version[6:]
+                remote_found = True
             elif (
                 command.version.startswith('tags/') and
                 command.version[5:] in tags
             ):
                 version_type = 'tag'
                 version_name = command.version[5:]
+                remote_found = True
             elif (
                 command.version in branches and
                 command.version not in tags
             ):
                 version_type = 'branch'
                 version_name = command.version
+                remote_found = True
             elif (
                 command.version in tags and
                 command.version not in branches
             ):
                 version_type = 'tag'
                 version_name = command.version
+                remote_found = True
             else:
                 for _hash in hashes:
                     if _hash.startswith(command.version):
+                        version_type = 'hash'
+                        version_name = command.version
+                        remote_found = True
                         break
-                else:
-                    cmd = result_ls_remote['cmd']
-                    output = "Found git repository '%s' but " % command.url + \
-                        'unable to verify non-branch / non-tag ref ' + \
-                        "'%s' without cloning the repo" % command.version
-
-                    return {
-                        'cmd': cmd,
-                        'cwd': self.path,
-                        'output': output,
-                        'returncode': 0
-                    }
 
             cmd = result_ls_remote['cmd']
-            output = "Found git repository '%s' with %s '%s'" % \
-                (command.url, version_type, version_name)
+            if remote_found and local_found:
+                output = "Found git repository '%s' with %s '%s' (remote) and local commit '%s' (%s): %s" % \
+                    (command.url, version_type, version_name, local_commit_info['short_hash'], local_commit_info['full_hash'], local_commit_info['message'])
+                return {
+                    'cmd': cmd,
+                    'cwd': self.path,
+                    'output': output,
+                    'returncode': None
+                }
+            elif remote_found and not local_found:
+                output = "Found git repository '%s' with %s '%s' (remote), but local repository does not contain this commit. Please update your local repository." % \
+                    (command.url, version_type, version_name)
+                return {
+                    'cmd': cmd,
+                    'cwd': self.path,
+                    'output': output,
+                    'returncode': 1
+                }
+            elif not remote_found and local_found:
+                output = "Found git repository '%s' with local commit '%s' (%s): %s, but unable to verify in remote repository." % \
+                    (command.url, local_commit_info['short_hash'], local_commit_info['full_hash'], local_commit_info['message'])
+                return {
+                    'cmd': cmd,
+                    'cwd': self.path,
+                    'output': output,
+                    'returncode': None
+                }
+            else:
+                output = "Found git repository '%s' but unable to verify non-branch / non-tag ref '%s' in remote or local repository" % (command.url, command.version)
+                return {
+                    'cmd': cmd,
+                    'cwd': self.path,
+                    'output': output,
+                    'returncode': 1
+                }
+
         else:
             cmd = result_ls_remote['cmd']
             output = "Found git repository '%s' with default branch" % \
@@ -782,6 +816,40 @@ class GitClient(VcsClientBase):
                 continue
             tuples.append((hash_, ref))
         return tuples
+
+    def _check_local_commit_exists(self, commit_hash):
+        """Check if a commit exists in the local repository."""
+        if not self.is_repository(self.path):
+            return False
+
+        # Use git rev-parse to check if the commit exists
+        cmd = [GitClient._executable, 'rev-parse', '--verify', commit_hash + '^{commit}']
+        result = self._run_command(cmd)
+        return result['returncode'] == 0
+
+    def _get_local_commit_info(self, commit_hash):
+        """Get information about a commit in the local repository."""
+        if not self.is_repository(self.path):
+            return None
+
+        # Get the full commit hash
+        cmd_rev_parse = [GitClient._executable, 'rev-parse', commit_hash]
+        result_rev_parse = self._run_command(cmd_rev_parse)
+        if result_rev_parse['returncode']:
+            return None
+
+        full_hash = result_rev_parse['output'].strip()
+
+        # Get commit message
+        cmd_log = [GitClient._executable, 'log', '--format=%s', '-n', '1', full_hash]
+        result_log = self._run_command(cmd_log)
+        commit_message = result_log['output'].strip() if not result_log['returncode'] else 'Unknown'
+
+        return {
+            'full_hash': full_hash,
+            'short_hash': commit_hash,
+            'message': commit_message
+        }
 
 
 if not GitClient._executable:
