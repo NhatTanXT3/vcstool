@@ -24,7 +24,8 @@ class ImportCommand(Command):
     help = 'Import the list of repositories'
 
     def __init__(
-        self, args, url, version=None, recursive=False, shallow=False
+        self, args, url, version=None, recursive=False, shallow=False,
+        hash_md5=None, hash_sha256=None
     ):
         super(ImportCommand, self).__init__(args)
         self.url = url
@@ -34,6 +35,8 @@ class ImportCommand(Command):
         self.skip_existing = args.skip_existing
         self.recursive = recursive
         self.shallow = shallow
+        self.hash_md5 = hash_md5
+        self.hash_sha256 = hash_sha256
 
 
 def get_parser():
@@ -107,6 +110,10 @@ def get_repos_in_vcstool_format(repositories):
             repo['url'] = attributes['url']
             if 'version' in attributes:
                 repo['version'] = attributes['version']
+            if 'hash_md5' in attributes:
+                repo['hash_md5'] = attributes['hash_md5']
+            if 'hash_sha256' in attributes:
+                repo['hash_sha256'] = attributes['hash_sha256']
         except KeyError as e:
             print(
                 ansi('yellowf') + (
@@ -138,6 +145,10 @@ def get_repos_in_rosinstall_format(root):
             repo['url'] = attributes['uri']
             if 'version' in attributes:
                 repo['version'] = attributes['version']
+            if 'hash_md5' in attributes:
+                repo['hash_md5'] = attributes['hash_md5']
+            if 'hash_sha256' in attributes:
+                repo['hash_sha256'] = attributes['hash_sha256']
         except KeyError as e:
             print(
                 ansi('yellowf') + (
@@ -171,7 +182,8 @@ def generate_jobs(repos, args):
         command = ImportCommand(
             args, repo['url'],
             str(repo['version']) if 'version' in repo else None,
-            recursive=args.recursive, shallow=args.shallow)
+            recursive=args.recursive, shallow=args.shallow,
+            hash_md5=repo.get('hash_md5'), hash_sha256=repo.get('hash_sha256'))
         job = {'client': client, 'command': command}
         jobs.append(job)
     return jobs
