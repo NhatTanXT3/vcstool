@@ -106,14 +106,14 @@ def get_repos_in_vcstool_format(repositories):
         repo = {}
         attributes = repositories[path]
         try:
-            repo['type'] = attributes['type']
-            repo['url'] = attributes['url']
+            repo['type'] = str(attributes['type'])
+            repo['url'] = str(attributes['url'])
             if 'version' in attributes:
-                repo['version'] = attributes['version']
+                repo['version'] = str(attributes['version'])
             if 'hash_md5' in attributes:
-                repo['hash_md5'] = attributes['hash_md5']
+                repo['hash_md5'] = str(attributes['hash_md5'])
             if 'hash_sha256' in attributes:
-                repo['hash_sha256'] = attributes['hash_sha256']
+                repo['hash_sha256'] = str(attributes['hash_sha256'])
         except KeyError as e:
             print(
                 ansi('yellowf') + (
@@ -142,13 +142,13 @@ def get_repos_in_rosinstall_format(root):
                 file=sys.stderr)
             continue
         try:
-            repo['url'] = attributes['uri']
+            repo['url'] = str(attributes['uri'])
             if 'version' in attributes:
-                repo['version'] = attributes['version']
+                repo['version'] = str(attributes['version'])
             if 'hash_md5' in attributes:
-                repo['hash_md5'] = attributes['hash_md5']
+                repo['hash_md5'] = str(attributes['hash_md5'])
             if 'hash_sha256' in attributes:
-                repo['hash_sha256'] = attributes['hash_sha256']
+                repo['hash_sha256'] = str(attributes['hash_sha256'])
         except KeyError as e:
             print(
                 ansi('yellowf') + (
